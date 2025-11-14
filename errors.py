@@ -13,3 +13,16 @@ class FileNotFoundError(ConfigError):
 class InvalidValueError(ValidationError):
     """Исключение для неверных значений параметров"""
     pass
+
+# Новые исключения для этапа 2
+class DependencyError(Exception):
+    """Исключение для ошибок получения зависимостей"""
+    pass
+
+class NetworkError(DependencyError):
+    """Исключение для сетевых ошибок"""
+    pass
+
+class PackageNotFoundError(DependencyError):
+    """Исключение когда пакет не найден"""
+    pass

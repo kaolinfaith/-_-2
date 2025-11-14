@@ -3,23 +3,31 @@ import os
 from config import AppConfig
 from parser import ConfigParser
 from validator import ConfigValidator
-from errors import ConfigError, ValidationError, FileNotFoundError, InvalidValueError
+from maven_parser import MavenDependencyParser
+from package_utils import PackageUtils
+from errors import ConfigError, ValidationError, FileNotFoundError, InvalidValueError, DependencyError, NetworkError
 
 
 class DependencyAnalyzer:
     def __init__(self, config_path: str):
         self.config_path = config_path
         self.config = None
+        self.dependency_parser = None
 
     def run(self):
-
         try:
             print("Dependency Analyzer")
             self._load_configuration()
             self._validate_configuration()
             self._print_configuration()
+            self._initialize_dependency_parser()
+
+            # Этап 2: Получение и вывод зависимостей
+            dependencies = self._get_package_dependencies()
+            self._print_dependencies(dependencies)
+
             self._demonstrate_error_handling()
-            self._execute_analysis()
+            self._execute_analysis(dependencies)
 
             print("Приложение успешно завершило работу!")
             return 0
@@ -36,9 +44,12 @@ class DependencyAnalyzer:
         except InvalidValueError as e:
             print(f"Неверное значение параметра: {e}", file=sys.stderr)
             return 4
+        except (DependencyError, NetworkError) as e:
+            print(f"Ошибка получения зависимостей: {e}", file=sys.stderr)
+            return 5
         except Exception as e:
             print(f"Неожиданная ошибка: {e}", file=sys.stderr)
-            return 5
+            return 6
 
     def _load_configuration(self):
         print("Загрузка конфигурации...")
@@ -52,15 +63,59 @@ class DependencyAnalyzer:
         print("Все параметры прошли валидацию")
 
     def _print_configuration(self):
-        print("ПАРАМЕТРЫ КОНФИГУРАЦИИ (ключ-значение):")
+        print("\nПАРАМЕТРЫ КОНФИГУРАЦИИ (ключ-значение):")
 
         config_dict = self.config.to_dict()
         for key, value in config_dict.items():
             print(f"{key:25}: {value}")
 
-    def _demonstrate_error_handling(self):
-        print("\n Демонстрация обработки ошибок...")
+        print("=" * 50)
 
+    def _initialize_dependency_parser(self):
+        """Инициализирует парсер зависимостей"""
+        print("\nИнициализация парсера Maven зависимостей...")
+        self.dependency_parser = MavenDependencyParser(self.config.repository_url)
+        print("Парсер успешно инициализирован")
+
+    def _get_package_dependencies(self) -> list:
+        """
+        Получает зависимости указанного пакета
+
+        Returns:
+            list: Список зависимостей
+        """
+        print(f"\nПолучение зависимостей для пакета: {self.config.package_name}")
+
+        try:
+            # Парсим имя пакета
+            group_id, artifact_id, version = PackageUtils.parse_package_name(self.config.package_name)
+            PackageUtils.validate_maven_coordinates(group_id, artifact_id, version)
+
+            print(f"GroupId: {group_id}, ArtifactId: {artifact_id}, Version: {version or 'latest'}")
+
+            # Получаем актуальную версию если нужно
+            resolved_version = self.dependency_parser.resolve_version(group_id, artifact_id, version)
+            print(f"Используемая версия: {resolved_version}")
+
+            # Получаем зависимости
+            dependencies = self.dependency_parser.get_dependencies(group_id, artifact_id, resolved_version)
+
+            print(f"Найдено зависимостей: {len(dependencies)}")
+            return dependencies
+
+        except Exception as e:
+            raise DependencyError(f"Не удалось получить зависимости для {self.config.package_name}: {e}")
+
+    def _print_dependencies(self, dependencies: list):
+        """Выводит зависимости на экран (требование этапа 2)"""
+        print("РЕЗУЛЬТАТЫ АНАЛИЗА ЗАВИСИМОСТЕЙ")
+
+        output = PackageUtils.format_dependency_output(dependencies)
+        print(output)
+
+
+    def _demonstrate_error_handling(self):
+        print("\nДемонстрация обработки ошибок...")
 
         test_errors = [
             ("Пустое имя пакета", AppConfig("", "url", "local", "test.png", False, 3, "")),
@@ -77,7 +132,7 @@ class DependencyAnalyzer:
             except Exception as e:
                 print(f"   Необработанная ошибка '{error_name}': {e}")
 
-    def _execute_analysis(self):
+    def _execute_analysis(self, dependencies: list):
         print("\nЗапуск анализа зависимостей...")
         print(f"   Анализируем пакет: {self.config.package_name}")
         print(f"   Репозиторий: {self.config.repository_url}")
@@ -86,7 +141,7 @@ class DependencyAnalyzer:
         print(f"   Режим ASCII-дерева: {self.config.ascii_tree_mode}")
         print(f"   Макс. глубина: {self.config.max_depth}")
         print(f"   Фильтр: '{self.config.filter_substring}'")
-        print("\n(Здесь будет реализована основная логика анализа зависимостей)")
+        print(f"   Найдено прямых зависимостей: {len(dependencies)}")
 
 
 def main():

@@ -4,7 +4,6 @@ from typing import Optional
 
 @dataclass
 class AppConfig:
-    """Класс для хранения конфигурации приложения"""
     package_name: str
     repository_url: str
     test_repo_mode: str
@@ -14,7 +13,6 @@ class AppConfig:
     filter_substring: str
 
     def to_dict(self) -> dict:
-        """Преобразование конфигурации в словарь для вывода"""
         return {
             'package_name': self.package_name,
             'repository_url': self.repository_url,
