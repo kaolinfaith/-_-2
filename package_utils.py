@@ -39,13 +39,13 @@ class PackageUtils:
     @staticmethod
     def validate_maven_coordinates(group_id: str, artifact_id: str, version: str = None):
         """Валидирует Maven координаты"""
-        if not re.match(r'^[a-zA-Z0-9_.-]+$', group_id):
+        if not re.match(r'^[a-zA-Z0-9_.\-]+$', group_id):
             raise InvalidValueError(f"Недопустимый GroupId: {group_id}")
 
-        if not re.match(r'^[a-zA-Z0-9_.-]+$', artifact_id):
+        if not re.match(r'^[a-zA-Z0-9_.\-]+$', artifact_id):
             raise InvalidValueError(f"Недопустимый ArtifactId: {artifact_id}")
 
-        if version and not re.match(r'^[a-zA-Z0-9_.-]+$', version):
+        if version and not re.match(r'^[a-zA-Z0-9_.\-\${}]+$', version):
             raise InvalidValueError(f"Недопустимая версия: {version}")
 
     @staticmethod
@@ -61,3 +61,8 @@ class PackageUtils:
             output.append(f"{i}. {dep['groupId']}:{dep['artifactId']}{version_info}{scope_info}")
 
         return '\n'.join(output)
+
+    @staticmethod
+    def is_version_resolved(version: str) -> bool:
+        """Проверяет, является ли версия разрешенной (не содержит переменных)"""
+        return version is not None and not version.startswith('${')
