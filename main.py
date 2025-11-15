@@ -5,10 +5,9 @@ from parser import ConfigParser
 from validator import ConfigValidator
 from maven_parser import MavenDependencyParser
 from package_utils import PackageUtils
-from graph import DependencyGraph
-from test_repository import TestDependencyGraph, TestRepositoryParser
+from enhanced_graphs import EnhancedDependencyGraph, EnhancedTestDependencyGraph
 from errors import ConfigError, ValidationError, FileNotFoundError, InvalidValueError, DependencyError, NetworkError, \
-    GraphError, CycleDetectedError, TestRepositoryError
+    GraphError, CycleDetectedError, TestRepositoryError, ReverseDependencyError
 
 
 class DependencyAnalyzer:
@@ -20,7 +19,7 @@ class DependencyAnalyzer:
 
     def run(self):
         try:
-            print("Dependency Analyzer - Этап 3")
+            print("Dependency Analyzer - Этап 4")
             self._load_configuration()
             self._validate_configuration()
             self._print_configuration()
@@ -53,9 +52,12 @@ class DependencyAnalyzer:
         except (GraphError, CycleDetectedError, TestRepositoryError) as e:
             print(f"Ошибка построения графа: {e}", file=sys.stderr)
             return 6
+        except ReverseDependencyError as e:
+            print(f"Ошибка поиска обратных зависимостей: {e}", file=sys.stderr)
+            return 7
         except Exception as e:
             print(f"Неожиданная ошибка: {e}", file=sys.stderr)
-            return 7
+            return 8
 
     def _load_configuration(self):
         print("Загрузка конфигурации...")
@@ -71,11 +73,9 @@ class DependencyAnalyzer:
     def _print_configuration(self):
         print("\nПАРАМЕТРЫ КОНФИГУРАЦИИ (ключ-значение):")
 
-
         config_dict = self.config.to_dict()
         for key, value in config_dict.items():
             print(f"{key:25}: {value}")
-
 
 
     def _process_real_repository(self):
@@ -89,6 +89,9 @@ class DependencyAnalyzer:
         # Строим полный граф (этап 3)
         self._build_dependency_graph()
 
+        # Поиск обратных зависимостей (этап 4)
+        self._find_reverse_dependencies()
+
     def _process_test_repository(self):
         """Обработка тестового репозитория"""
         print("\nРЕЖИМ: ТЕСТОВЫЙ РЕПОЗИТОРИЙ")
@@ -101,7 +104,7 @@ class DependencyAnalyzer:
             0] if ':' in self.config.package_name else self.config.package_name
 
         # Строим тестовый граф
-        test_graph = TestDependencyGraph(
+        test_graph = EnhancedTestDependencyGraph(
             self.config.repository_url,
             self.config.max_depth,
             self.config.filter_substring
@@ -110,37 +113,96 @@ class DependencyAnalyzer:
         graph_data = test_graph.build_graph(root_package)
         test_graph.print_graph()
 
-        # Демонстрация различных случаев
-        self._demonstrate_test_cases()
+        # Поиск обратных зависимостей (этап 4)
+        self._find_test_reverse_dependencies(test_graph)
 
-    def _demonstrate_test_cases(self):
+        # Демонстрация различных случаев
+        self._demonstrate_test_cases(test_graph)
+
+    def _find_reverse_dependencies(self):
+        """Поиск обратных зависимостей для реального репозитория"""
+        print("ПОИСК ОБРАТНЫХ ЗАВИСИМОСТЕЙ (Этап 4)")
+
+
+        if not self.graph:
+            print(" Граф не построен, невозможно найти обратные зависимости")
+            return
+
+        # Для демонстрации используем первую зависимость корневого пакета
+        try:
+            root_package = self.config.package_name
+            group_id, artifact_id, version = PackageUtils.parse_package_name(root_package)
+            resolved_version = self.dependency_parser.resolve_version(group_id, artifact_id, version)
+            root_key = f"{group_id}:{artifact_id}:{resolved_version}"
+
+            # Получаем зависимости корневого пакета
+            root_dependencies = self.dependency_parser.get_dependencies(group_id, artifact_id, resolved_version)
+
+            if root_dependencies:
+                # Берем первую зависимость для демонстрации
+                target_dep = root_dependencies[0]
+                target_package = f"{target_dep['groupId']}:{target_dep['artifactId']}:{target_dep['version']}"
+
+                print(f"Поиск пакетов, зависящих от: {target_package}")
+                self.graph.print_reverse_dependencies(target_package)
+            else:
+                print("У корневого пакета нет зависимостей для демонстрации")
+
+        except Exception as e:
+            print(f"Ошибка при поиске обратных зависимостей: {e}")
+
+    def _find_test_reverse_dependencies(self, test_graph):
+        """Поиск обратных зависимостей для тестового репозитория"""
+
+        print("ПОИСК ОБРАТНЫХ ЗАВИСИМОСТЕЙ (Этап 4)")
+
+
+        # Демонстрация для нескольких целевых пакетов
+        test_targets = ['X', 'B', 'A']  # Пакеты с большим количеством зависимостей
+
+        for target_package in test_targets:
+            print(f"\n Демонстрация для пакета '{target_package}':")
+            try:
+                test_graph.print_reverse_dependencies(target_package)
+            except Exception as e:
+                print(f"Ошибка для пакета {target_package}: {e}")
+
+    def _demonstrate_test_cases(self, test_graph):
         """Демонстрация различных случаев работы с тестовым репозиторием"""
+
         print("ДЕМОНСТРАЦИЯ РАЗЛИЧНЫХ СЛУЧАЕВ")
 
+
         test_cases = [
-            {"root": "A", "max_depth": 2, "filter": ""},
-            {"root": "B", "max_depth": 3, "filter": "E"},
-            {"root": "D", "max_depth": 4, "filter": ""},  # Циклическая зависимость
+            {"root": "A", "max_depth": 3, "filter": "", "target": "X"},
+            {"root": "B", "max_depth": 2, "filter": "E", "target": "D"},
+            {"root": "X", "max_depth": 4, "filter": "", "target": "Y"},  # Центральный пакет
         ]
 
         for i, case in enumerate(test_cases, 1):
-            print(f"\nТестовый случай {i}:")
+            print(f"\n Тестовый случай {i}:")
             print(f"   Корень: {case['root']}")
             print(f"   Макс. глубина: {case['max_depth']}")
             print(f"   Фильтр: '{case['filter']}'")
+            print(f"   Целевой пакет: '{case['target']}'")
 
             try:
-                test_graph = TestDependencyGraph(
+                test_case_graph = EnhancedTestDependencyGraph(
                     self.config.repository_url,
                     case['max_depth'],
                     case['filter']
                 )
-                graph_data = test_graph.build_graph(case['root'])
-                print(f"   Успешно построен граф с {len(graph_data)} пакетами")
+                graph_data = test_case_graph.build_graph(case['root'])
+                print(f"    Успешно построен граф с {len(graph_data)} пакетами")
+
+                # Демонстрация обратных зависимостей
+                reverse_deps = test_case_graph.find_reverse_dependencies(case['target'])
+                print(f"    Найдено обратных зависимостей: {len(reverse_deps)}")
+
             except CycleDetectedError as e:
-                print(f"   Обнаружена циклическая зависимость: {e}")
+                print(f"    Обнаружена циклическая зависимость: {e}")
             except Exception as e:
-                print(f"   Ошибка: {e}")
+                print(f"    Ошибка: {e}")
 
     def _get_package_dependencies(self):
         """Получает зависимости пакета (этап 2)"""
@@ -164,15 +226,18 @@ class DependencyAnalyzer:
 
         print("ПРЯМЫЕ ЗАВИСИМОСТИ (Этап 2)")
 
+
         output = PackageUtils.format_dependency_output(dependencies)
         print(output)
+
 
     def _build_dependency_graph(self):
         """Строит полный граф зависимостей (этап 3)"""
 
         print("ПОСТРОЕНИЕ ПОЛНОГО ГРАФА ЗАВИСИМОСТЕЙ (Этап 3)")
 
-        self.graph = DependencyGraph(
+
+        self.graph = EnhancedDependencyGraph(
             self.config.repository_url,
             self.config.max_depth,
             self.config.filter_substring

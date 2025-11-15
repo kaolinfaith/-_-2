@@ -26,7 +26,6 @@ class PackageNotFoundError(DependencyError):
     """Исключение когда пакет не найден"""
     pass
 
-# Новые исключения для этапа 3
 class GraphError(Exception):
     """Исключение для ошибок построения графа"""
     pass
@@ -37,4 +36,9 @@ class CycleDetectedError(GraphError):
 
 class TestRepositoryError(GraphError):
     """Исключение для ошибок тестового репозитория"""
+    pass
+
+# Новые исключения для этапа 4
+class ReverseDependencyError(GraphError):
+    """Исключение для ошибок поиска обратных зависимостей"""
     pass
